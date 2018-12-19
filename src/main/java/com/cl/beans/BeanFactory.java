@@ -1,4 +1,4 @@
-package com.cl;
+package com.cl.beans;
 
 import java.lang.reflect.InvocationTargetException;
 

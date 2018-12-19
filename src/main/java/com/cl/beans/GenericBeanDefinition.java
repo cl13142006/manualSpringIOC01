@@ -1,4 +1,4 @@
-package com.cl;
+package com.cl.beans;
 
 /**
  * @author cl
@@ -8,7 +8,7 @@ public class GenericBeanDefinition implements BeanDefinition {
 
     private Class<?> clazz;
 
-    private String scope = BeanDefinition.SCOPE_SINGLETON;
+    private String scope = SCOPE_SINGLETON;
 
     private String factoryBeanName;
 
@@ -55,12 +55,12 @@ public class GenericBeanDefinition implements BeanDefinition {
 
     @Override
     public boolean isSingleton() {
-        return BeanDefinition.SCOPE_SINGLETON.equals(this.scope);
+        return SCOPE_SINGLETON.equals(this.scope);
     }
 
     @Override
     public boolean isPrototype() {
-        return BeanDefinition.SCOPE_PROTOTYPE.equals(this.scope);
+        return SCOPE_PROTOTYPE.equals(this.scope);
     }
 
     @Override

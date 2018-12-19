@@ -1,4 +1,4 @@
-package com.cl;
+package com.cl.beans;
 
 /**
  * @author cl

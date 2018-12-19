@@ -1,4 +1,4 @@
-package com.cl;
+package com.cl.beans;
 
 import org.apache.commons.lang3.StringUtils;
 
@@ -6,7 +6,6 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;

@@ -1,4 +1,4 @@
-package com.cl;
+package com.cl.beans;
 
 
 import org.apache.commons.lang3.StringUtils;
