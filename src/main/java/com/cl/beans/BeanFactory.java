@@ -12,5 +12,5 @@ public interface BeanFactory {
      * @param beanName
      * @return
      */
-    Object getBean(String beanName) throws InvocationTargetException, NoSuchMethodException, InstantiationException, IllegalAccessException;
+    Object getBean(String beanName) throws Exception;
 }

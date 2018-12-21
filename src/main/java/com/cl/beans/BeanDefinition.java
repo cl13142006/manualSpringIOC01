@@ -3,6 +3,10 @@ package com.cl.beans;
 
 import org.apache.commons.lang3.StringUtils;
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Method;
+import java.util.List;
+
 /**
  * Created by cl on 2018/12/11.
  */
@@ -27,6 +31,18 @@ public interface BeanDefinition {
     String getInitMethodName();
 
     String getDestoryMethodName();
+
+    List<?> getConstructorAgrumentValues();
+
+    Constructor<?> getConstructor();
+
+    void setConstructor(Constructor<?> constructor);
+
+    Method getFactoryMethod();
+
+    void setFactoryMethod(Method factoryMethod);
+
+    List<PropertyValue> getPropertyValues();
 
     default boolean validate(){
         //进行校验

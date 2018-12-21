@@ -1,5 +1,9 @@
 package com.cl.beans;
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Method;
+import java.util.List;
+
 /**
  * @author cl
  * @create 2018-12-12 9:29
@@ -18,6 +22,13 @@ public class GenericBeanDefinition implements BeanDefinition {
 
     private String destoryMethodName;
 
+    private List<?> constructorArgumentValues;
+
+    private Constructor<?> constructor;
+
+    private Method factoryMethod;
+
+    private List<PropertyValue> propertyValues;
 
     public void setBeanClass(Class<?> clazz){
         this.clazz = clazz;
@@ -41,6 +52,14 @@ public class GenericBeanDefinition implements BeanDefinition {
 
     public void setDestoryMethodName(String destoryMethodName){
         this.destoryMethodName = destoryMethodName;
+    }
+
+    public void setConstructorArgumentValues(List<?> constructorArgumentValues){
+        this.constructorArgumentValues = constructorArgumentValues;
+    }
+
+    public void setPropertyValues(List<PropertyValue> propertyValues){
+        this.propertyValues = propertyValues;
     }
 
     @Override
@@ -82,4 +101,36 @@ public class GenericBeanDefinition implements BeanDefinition {
     public String getDestoryMethodName() {
         return this.destoryMethodName;
     }
+
+    @Override
+    public List<?> getConstructorAgrumentValues() {
+        return this.constructorArgumentValues;
+    }
+
+    @Override
+    public Constructor<?> getConstructor() {
+        return this.constructor;
+    }
+
+    @Override
+    public void setConstructor(Constructor<?> constructor) {
+        this.constructor = constructor;
+    }
+
+    @Override
+    public Method getFactoryMethod() {
+        return this.factoryMethod;
+    }
+
+    @Override
+    public void setFactoryMethod(Method factoryMethod) {
+        this.factoryMethod = factoryMethod;
+    }
+
+    @Override
+    public List<PropertyValue> getPropertyValues() {
+        return this.propertyValues;
+    }
+
+
 }

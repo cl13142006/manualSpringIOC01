@@ -1,14 +1,15 @@
 package com.cl.beans;
 
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -21,6 +22,8 @@ public class DefaultBeanFactory implements BeanFactory,BeanDefinitionRegistry,Cl
     private Map<String,BeanDefinition> beanDefinitionMap = new ConcurrentHashMap<>();
 
     private Map<String,Object> beanMap = new ConcurrentHashMap<>();
+
+    private ThreadLocal<Set<String>> buildingBeans = new ThreadLocal<>();
 
     @Override
     public void registryBeanDefinition(String beanName, BeanDefinition beandefinition) {
@@ -48,20 +51,32 @@ public class DefaultBeanFactory implements BeanFactory,BeanDefinitionRegistry,Cl
     }
 
     @Override
-    public Object getBean(String beanName) throws InvocationTargetException, NoSuchMethodException, InstantiationException, IllegalAccessException {
+    public Object getBean(String beanName) throws Exception {
         return this.doGetBean(beanName);
     }
 
-    protected Object doGetBean(String beanName) throws InstantiationException, IllegalAccessException, NoSuchMethodException, InvocationTargetException {
+    protected Object doGetBean(String beanName) throws Exception {
         Objects.requireNonNull(beanName,"beanName is not null");
         Object object = beanMap.get(beanName);
         if(object != null){
             return object;
         }
+
         BeanDefinition bd = beanDefinitionMap.get(beanName);
         if(bd == null){
             throw new RuntimeException("bd is not null");
         }
+
+        Set<String> ingBeans = this.buildingBeans.get();
+        if(ingBeans == null){
+            ingBeans= new HashSet<>();
+            this.buildingBeans.set(ingBeans);
+        }
+
+        if(!ingBeans.add(beanName)){
+            throw new RuntimeException(beanName + "循环依赖" + ingBeans);
+        }
+
         Class<?> clazz = bd.getBeanClass();
         if(clazz != null){
             if(StringUtils.isBlank(bd.getFactoryMethodName())){
@@ -74,31 +89,135 @@ public class DefaultBeanFactory implements BeanFactory,BeanDefinitionRegistry,Cl
             //普通工厂方法
             object = this.createInstanceByFactoryBean(bd);
         }
+
+        ingBeans.clear();
+
+        //属性注入
+        this.setPropertyDiValue(bd,object);
+
         this.doInit(object,bd);
+
         if(bd.isSingleton()){
             beanMap.put(beanName,object);
         }
+
         return object;
     }
 
-    private Object createInstanceByConstructor(BeanDefinition bd) throws IllegalAccessException, InstantiationException {
-        Class<?> clazz = bd.getBeanClass();
-        return clazz.newInstance();
+    private void setPropertyDiValue(BeanDefinition bd,Object object) throws Exception {
+        List<PropertyValue> propertyValues = bd.getPropertyValues();
+        if(propertyValues != null){
+            for(PropertyValue propertyValue : propertyValues){
+                String name = propertyValue.getName();
+                Object rv = propertyValue.getValue();
+                Objects.requireNonNull(name,"name is not null");
+                Objects.requireNonNull(rv,"obj is not null");
+                Field field = object.getClass().getDeclaredField(name);
+                field.setAccessible(true);
+                Object v = null;
+                if (rv == null) {
+                    v = null;
+                } else if (rv instanceof BeanReference) {
+                    v = this.doGetBean(((BeanReference) rv).getBeanName());
+                } else if (rv instanceof Object[]) {
+                    // TODO 处理集合中的bean引用
+                } else if (rv instanceof Collection) {
+                    // TODO 处理集合中的bean引用
+                } else if (rv instanceof Properties) {
+                    // TODO 处理properties中的bean引用
+                } else if (rv instanceof Map) {
+                    // TODO 处理Map中的bean引用
+                } else {
+                    v = rv;
+                }
+                field.set(object,v);
+            }
+        }
     }
 
-    private Object createInstanceByStaticFactoryMethod(BeanDefinition bd) throws NoSuchMethodException, InvocationTargetException, IllegalAccessException {
-        Class<?> clazz = bd.getBeanClass();
-        Method method = clazz.getMethod(bd.getFactoryMethodName(),null);
-        return method.invoke(clazz,null);
+    private Object createInstanceByConstructor(BeanDefinition bd) throws Exception {
+        try{
+            Object [] obj = this.getConstructorArgumentValues(bd);
+            Class<?> clazz = bd.getBeanClass();
+            if(obj == null){
+                return clazz.newInstance();
+            }else{
+                return this.determineConstractor(bd,obj).newInstance(obj);
+            }
+        } catch (SecurityException e1) {
+            e1.printStackTrace();
+            throw e1;
+        }
     }
 
-    private Object createInstanceByFactoryBean(BeanDefinition bd) throws InvocationTargetException, NoSuchMethodException, InstantiationException, IllegalAccessException {
+    private Object createInstanceByStaticFactoryMethod(BeanDefinition bd) throws Exception {
+        Class<?> clazz = bd.getBeanClass();
+        Object [] args = this.getRealValues(bd.getConstructorAgrumentValues());
+//        Method method = clazz.getMethod(bd.getFactoryMethodName(),null);
+        Method method = this.determineFactoryMethod(bd,args,null);
+        return method.invoke(clazz,args);
+
+    }
+
+    private Object createInstanceByFactoryBean(BeanDefinition bd) throws Exception {
         String factoryBeanName = bd.getFactoryBeanName();
         Object obj = this.doGetBean(factoryBeanName);
-        String factoryMethodName = bd.getFactoryMethodName();
-        Method method  = obj.getClass().getMethod(factoryMethodName,null);
-        return method.invoke(obj,null);
+        Object[] realArgs = this.getRealValues(bd.getConstructorAgrumentValues());
+        Method method = this.determineFactoryMethod(bd,realArgs,obj.getClass());
+        return method.invoke(obj,realArgs);
     }
+
+    private Method determineFactoryMethod(BeanDefinition bd,Object [] realValues,Class<?> type) throws Exception{
+        if(type == null){
+            type = bd.getBeanClass();
+        }
+        String methodName = bd.getFactoryMethodName();
+
+        Method method = bd.getFactoryMethod();
+        if(method != null){
+            return method;
+        }
+        Class [] paramTypes = new Class[realValues.length];
+        int j = 0;
+        for(int i = 0;i<realValues.length;i++){
+            paramTypes[j++] = realValues[i].getClass();
+        }
+        try{
+            method = type.getMethod(methodName,paramTypes);
+        }catch(Exception e){
+
+        }
+        if(method == null){
+            outer : for(Method m0 : type.getMethods()){
+               if(!m0.getName().equals(methodName)){
+                   continue;
+               }
+                Class<?>[] paramterTypes = m0.getParameterTypes();
+                if(paramterTypes.length == paramTypes.length ){
+                    for (int i = 0; i < paramterTypes.length; i++) {
+                        if (!paramterTypes[i].isAssignableFrom(realValues[i].getClass())) {
+                            continue outer;
+                        }
+                    }
+
+                    method = m0;
+                    break outer;
+                }
+            }
+        }
+        if (method != null) {
+            // 对于原型bean,可以缓存找到的方法，方便下次构造实例对象。在BeanDefinfition中获取设置所用方法的方法。
+            // 同时在上面增加从beanDefinition中获取的逻辑。
+            if (bd.isPrototype()) {
+                bd.setFactoryMethod(method);
+            }
+            return method;
+        } else {
+            throw new Exception("不存在对应的构造方法！" + bd);
+        }
+
+    }
+
 
     private void doInit(Object obj,BeanDefinition bd) throws NoSuchMethodException, InvocationTargetException, IllegalAccessException {
         String initMethodName = bd.getInitMethodName();
@@ -128,5 +247,85 @@ public class DefaultBeanFactory implements BeanFactory,BeanDefinitionRegistry,Cl
                 }
             }
         }
+    }
+
+    /**
+     * 匹配构造器
+     * @param bd
+     * @param args
+     * @return
+     */
+    private Constructor<?> determineConstractor(BeanDefinition bd, Object [] args) throws Exception {
+        Constructor<?> constructor = null;
+        constructor = bd.getConstructor();
+        if(constructor != null){
+            return constructor;
+        }
+        //先直接按照目标和参数
+        Class<?> [] paramType = new Class[args.length];
+        int j = 0;
+        for(Object o : args){
+            paramType[j++] = o.getClass();
+        }
+        try {
+            constructor = bd.getBeanClass().getConstructor(paramType);
+        }catch(Exception e){
+            //异常不处理
+        }
+        if(constructor == null){
+            outer: for(Constructor<?> ct0 : bd.getBeanClass().getConstructors()){
+                Class<?> [] paramterTypes = ct0.getParameterTypes();
+                if(paramterTypes.length == args.length){
+                    for(int i = 0;i<paramterTypes.length;i++){
+                        if(!paramterTypes[i].isAssignableFrom(args[i].getClass())){
+                            continue outer;
+                        }
+                    }
+                    constructor = ct0;
+                    break outer;
+                }
+
+            }
+        }
+        if(constructor != null){
+            if(bd.isPrototype()){
+                bd.setConstructor(constructor);
+            }
+            return constructor;
+        }else{
+            throw new Exception("不存在对应的构造方法！" + bd);
+        }
+
+    }
+
+
+    private Object [] getConstructorArgumentValues(BeanDefinition bd) throws Exception{
+        return getRealValues(bd.getConstructorAgrumentValues());
+    }
+
+    private Object [] getRealValues(List<?> defs) throws Exception {
+        if(CollectionUtils.isEmpty(defs)){
+            return null;
+        }
+        Object [] values = new Object[defs.size()];
+        int i = 0;
+        Object v = null;
+        for(Object obj : defs){
+            if(obj == null){
+                v = null;
+            } else if(obj instanceof  BeanReference){
+                v = this.doGetBean(((BeanReference)obj).getBeanName());
+            }else if(obj instanceof Object []){
+
+            }else if(obj instanceof Collection){
+
+            }else if(obj instanceof Map){
+
+            }else {
+                v = obj;
+            }
+            values[i++] = v;
+        }
+        return values;
     }
 }
